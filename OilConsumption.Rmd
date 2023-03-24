@@ -1,0 +1,295 @@
+---
+title: "Oil Consumption and a Nation's Military"
+author: "Tyler Nguyen"
+date: "3/18/2023"
+output:
+  pdf_document:
+    fig_width: 6.5
+    fig_height: 4
+  fontsize: 12pt
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Introduction
+
+#### Research Question
+In this report, I sought to answer how a nation's military affects its oil consumption. Military emissions are not required to be reported to the United Nations, and I wish to explore if the size of a nation's military is associated with a nation's oil consumption. 
+
+#### Background and Source of Data
+Oil is the most desired natural resource in the world because of its significance in all areas of our lives, from the gas in our cars, to the heating of our homes, to the production of electricity. I chose to conduct a report using metrics of a nation's military and their subsequent oil consumption. After reading an article which stated that the single largest use of fossil fuels in the world was via the US military, I thought of using my recently acquired multiple linear regression knowledge to further analyze this claim. I pulled data from Kaggle of 'Military Power by Country 2022' which pulled its data from Global Fire Power's index of militaries, which ranked military strength based off of 40 metrics. Oil consumption was one of these metrics, and I chose seven others to serve as the explanatory variables to create a multiple linear regression model which predicted oil consumption. 
+
+#### Methodology and Paper Overview 
+To start, I will conduct an introductory analysis of the variables before building the models in order to observe potential relationships. Afterwards, I will then fit a multiple linear regression model using all variables in the data set, and from this initial model, I will observe the four diagnostic plots to observe if any conditions are violated. Namely, these conditions include linearity, constant variance, and normality of errors. If they are violated, I will transform and refit the data until these assumptions are met. If there is an issue with multicollinearity, I will perform variable selection to reduce the model. Finally, I will interpret the results and analyze which model performs best using my intuition to see if the model is applicable to the real world.
+
+#### Data Description 
+The dataset is of size [140,8] and contains the following variables:
+
+```{r, include = FALSE}
+library(car)
+library(dplyr)
+gfp <- read.csv("ranking_table.csv")
+gfp2 <- read.csv("global firepower 2022 wide.csv")
+gfp3 <- merge(gfp, gfp2, by.x = "name", by.y = "country")
+```
+
+```{r, include = FALSE}
+power <- gfp3[, c("Oil.Consumption", "power_index", "Active.Personnel", "Armored.Vehicles", "Helicopters", "Defense.Budget", "Navy.Ships", "Total.Aircraft.Strength")]
+power$Defense.Budget <- power$Defense.Budget/1000000000
+dim(power)
+colnames(power)
+```
+- Oil.Consumption : A nation's oil consumption in BBL (barrel of crude oil). 1 BBL = 42 gallons 
+- power_index : A nation's military score based upon factors. Lower score means a nation has a stronger military, and a score of 0 is the theoretic "perfect" military
+- Active.personnel : The number of people in nation's military full time
+- Armored.Vehicles : The number of armored vehicles of a nation
+- Helicopters : The number of total military helicopters of a nation
+- Defense.Budget : The defense budget of a nation in Billions of USD
+- Navy.ships : The number of warships and submarines of a nation
+- Total.Aircraft.Strength: The total number of aircrafts (fighter jets, trainers, transports, bombers, etc) of a nation
+```{r, include = FALSE}
+sum(is.na(power))
+```
+
+There are no NA values in the data frame.
+
+#### Summary Stats
+Here are the min, mean, max, and standard deviations of each explanatory variable:
+```{r, echo = FALSE, fig.width = 5}
+summary <- rbind(apply(power[, -1], 2, min), apply(power[, -1], 2, mean), apply(power[, -1], 2, max), apply(power[, -1], 2, sd))
+rownames(summary) <- c("min", "mean", "max", "sd")
+rounded <- round(summary, digits = 2)
+rounded
+```
+#### Correlation Coefficients 
+Here are the correlation coefficients between each variable and oil consumption
+```{r, echo = FALSE}
+relationships <- cor(power)[1,]
+relationships
+```
+#### Scatterplot Matrix 
+The Scatterplot Matrix:
+```{r, echo = FALSE, fig.align = "center" }
+pairs(power, cex = 0.1)
+```
+It is seen from the matrix that the relationship between oil consumption and power_index appears to be negatively associated. In fact, it looks very logarithmic, indicating that a potential transformation is necessary. The variables helicopters, defense budget, and total aircraft strength appear to be positively associated, while Active Personnel, armored vehicles, and navy ships, appear to have a very slight positive correlation.
+
+### Models
+
+#### First Model: Untransformed Full Multiple Linear Regression
+My first model is a multiple linear regression model including all seven variables with no transformations. This is the equation:
+```{r, echo = FALSE}
+m1 <- lm(Oil.Consumption ~. , data = power)
+summary(m1)
+```
+Predicted OilConsumption = `r format(m1$coefficients[1], scientific = FALSE)` - `r -round(m1$coefficients[2], digits = 2)`powerindex +`r round(m1$coefficients[3], digits = 2)`ActivePersonnel +`r round(m1$coefficients[4], digits = 2)`ArmoredVehicles - `r -round(m1$coefficients[5], digits = 2)`Helicopters + `r format(m1$coefficients[6], scientific = FALSE)`DefenseBudget + `r round(m1$coefficients[7], digits = 2)`NavyShips - `r -round(m1$coefficients[8], digits = 2)`TotalAircrafts 
+
+R^2 adjusted = 0.9565
+
+#### Untransformed Full Model Evaluation 
+Based upon our scatterplot matrix, I know that the correlation coefficient for helicopters, navyships, and aircrafts should be positive. However, our model tells us that the association of these three variables are negative. This result not only goes against the scatterplot matrix, but my intuition as well, as the more aircrafts one has, the more oil is needed in order for them to operate. This suggests that our predictor variables are multicollinear. To check this, I will use the variance inflation factors command in R. 
+```{r}
+vif(m1)
+```
+We find that there is in fact a multicollinearity issue due to the some values being greater than 5.
+\
+\
+I shall now check the diagnostic plots to test for linearity, normality of errors, constant variance, and outliers:
+```{r, fig.align = "center", echo= FALSE}
+par(mfrow = c(2, 2))
+suppressWarnings(plot(m1))
+```
+Our Residuals vs Fitted Values plot illustrates that the relationship between Oil Consumption and the predictors is non linear. The Normal Q-Q Plot illustrates that our errors are not normal, as the plot appears to be heavily tailed. The Standardized residuals plot display non-constant variance, as there appears to be a slight dip at the very start. Finally, our Residuals vs Leverage plot shows that there is a handful of outliers, as there are points outside [-2,2] standardized residuals and to the right of 2 * (8/140), or 0.1143.
+\
+\
+Because there may be an issue with linearity, normality of errors, and constant variance, I shall transform the variables. 
+
+#### Second Model : Power Transformation 
+I shall now perform a power transformation to our first model. Here it is:
+```{r, echo= FALSE}
+power2 <- replace(power, power ==0, 0.00000001) # because boxcox does not allow for zero values
+trans <- powerTransform(cbind(Oil.Consumption, power_index, Active.Personnel, Armored.Vehicles, Helicopters, Defense.Budget, Navy.Ships, Total.Aircraft.Strength)~1, data = power2)
+trans$roundlam
+```
+I shall round all values to 0, hence I will apply the log transformation to every variable. The transformed model will look like the following:
+```{r, echo = FALSE}
+oil <- log(power$Oil.Consumption)
+index <- log(power$power_index)
+active <- log(power$Active.Personnel + 1) # add plus ones because log(0) is undefined
+armored <- log(power$Armored.Vehicles)
+heli <- log(power$Helicopters + 1)
+def <- log(power$Defense.Budget)
+navy <- log(power$Navy.Ships + 1)
+aircrafts <- log(power$Total.Aircraft.Strength + 1)
+
+power_model <- lm(oil ~ index + active + armored + heli + def + navy + aircrafts)
+summary(power_model)
+```
+
+log(Predicted Oil Consumption) = `r round(power_model$coefficients[1], digits =2)` - `r -round(power_model$coefficients[2], digits = 2)`log(powerindex) -`r -round(power_model$coefficients[3], digits = 2)`log(Active Personnel) +`r round(power_model$coefficients[4], digits = 2)`log(ArmoredVehicles) + `r round(power_model$coefficients[5], digits = 2)`log(Helicopters) + `r round(power_model$coefficients[6], digits = 2)`log(DefenseBudget) + `r round(power_model$coefficients[7], digits = 2)`log(NavyShips) - `r -round(power_model$coefficients[8], digits = 2)`log(Aircrafts)
+
+Adjusted R^2^ = 0.8578
+
+#### Transformed Model Evaluation 
+The correlation coefficient for helicopters is now positive, indicating that the transformation may have been helpful. However, active personnel is now negative, indicating that multicollinearity may still be present. Let us check through calculating the VIFs.
+
+```{r}
+vif(power_model)
+```
+Although the values are significantly smaller, there still appears to be multicollinearity as some values are still much greater than 5. 
+\
+\
+Let us now analyze the transformed model's diagnostic plots:
+```{r, fig.align = "center"}
+par(mfrow = c(2, 2))
+plot(power_model)
+```
+All 4 diagnostic plots have significantly improved. The Residuals vs Fitted plot shows that the relationship between the variables is now fairly linear. Although there is still a slight negative slope, it is a significant improvement from the first model's Residuals plot. The Normal Q-Q Plot illustrates that most of the errors are now normal, with just two outliers, observations 25 and 90, not following the linear trend. The Standardized Residuals plot also shows improvement from the first model in that there is constant variance. Finally, the Residuals vs Leverage plots illustrates that there are less outliers compared to the first model. Only observations 25 and 90 are outside of the standardized residuals range of [-2,2]. Additionally, there are less leverage points than the first models, as only two points are to the right of 0.11.
+\
+Clearly, the log transformed model is better than the first. However, there is still an issue involving multicollinearity, indicating that there is a need for a reduced model. 
+
+#### Third Model: Reduced Transformed Model
+To find which variables I should use, I shall do forward stepwise AIC, backward stepwise AIC, forward stepwise AIC, backward stepwise AIC, and use the R^2 adjusted value to choose the best.
+```{r, eval = FALSE}
+mint <- lm(oil ~1)
+forwardAIC <- step(mint, scope = list(lower = ~1, upper = power_model), direction = "forward")
+
+backwardAIC <- step(power_model, direction = "backward")
+
+forwardBIC <- step(mint, scope = list(lower = ~1, upper = power_model), direction = "forward", k=log(140))
+
+backwardBIC <- step(power_model, direction = "backward", k = log(140))
+```
+The Four tests did not agree on the same model:
+\
+- Forwards AIC and Backwards AIC chose: DefenseBudget, Index, NavyShips, ActivePersonnel, Tanks, Heli
+\
+- Forwards BIC and Backwards BIC chose: DefenseBudget, Index, NavyShips, ActivePersonnel
+\
+\
+
+To choose between the two we shall look at the adjusted R^2^ values and conduct a partial F-test
+```{r}
+x1 <- lm(oil ~ def + index + navy + active + aircrafts + heli)
+summary(x1)$adj.r.squared
+
+x2 <- lm(oil ~ def + index + navy + active)
+summary(x2)$adj.r.squared
+
+```
+The adjusted R-squared values says the model with just defense budget, power index, navy ships, and active personnel is best. Let us now conduct a partial F-test
+```{r, echo = FALSE}
+anova(x1,x2)
+```
+The p-value is greater than 0.05, so we fail to reject the null hypothesis and accept the reduced model. This is in line with what the adjusted R^2^ values told us.
+\
+\
+Let us now look at the added variable plots to confirm that this reduced model is best:
+```{r, fig.align = "center", echo = FALSE}
+par(mfrow = c(2,4))
+avPlot(power_model, variable = "def", ask = FALSE)
+avPlot(power_model, variable = "index", ask = FALSE)
+avPlot(power_model, variable = "navy", ask = FALSE)
+avPlot(power_model, variable = "active", ask = FALSE)
+avPlot(power_model, variable = "aircrafts", ask = FALSE)
+avPlot(power_model, variable = "heli", ask = FALSE)
+avPlot(power_model, variable = "armored", ask = FALSE)
+```
+The added variable plots align with the conclusion that the reduced model is best. This is because the slopes of aircrafts, helicopters, and armored vehicles are non-significant. The plots also illustrate that observations 25 and 90 are problematic, just as our diagonistic plots had shown as well. They heavily skew the graphs as they are significantly away from our cluster of points. For this reason, I shall see how these added variable plots look like with these points removed. 
+\
+\
+Removing outliers:
+```{r}
+power3 <- power2[-c(25,90),]
+oil2 <- log(power3$Oil.Consumption)
+index2 <- log(power3$power_index)
+active2 <- log(power3$Active.Personnel + 1) # add plus ones because log(0) is undefined
+armored2 <- log(power3$Armored.Vehicles)
+heli2 <- log(power3$Helicopters + 1)
+def2 <- log(power3$Defense.Budget)
+navy2 <- log(power3$Navy.Ships + 1)
+aircrafts2 <- log(power3$Total.Aircraft.Strength + 1)
+outlier_model <- lm(oil2 ~ index2 + active2 + armored2 + heli2 + def2 + navy2 + aircrafts2)
+```
+The new added variable plots:
+```{r, fig.align = "center", echo = FALSE}
+par(mfrow = c(2,4))
+avPlot(outlier_model, variable = "def2", ask = FALSE)
+avPlot(outlier_model, variable = "index2", ask = FALSE)
+avPlot(outlier_model, variable = "navy2", ask = FALSE)
+avPlot(outlier_model, variable = "active2", ask = FALSE)
+avPlot(outlier_model, variable = "aircrafts2", ask = FALSE)
+avPlot(outlier_model, variable = "heli2", ask = FALSE)
+avPlot(outlier_model, variable = "armored2", ask = FALSE)
+```
+Removing the outliers did not seem to significantly affect the added variable plots, so I will still go with the reduced model without removing the two outliers. Here is the equation of our reduced model:
+
+```{r, echo = FALSE}
+summary(x2)
+```
+log(Predicted Oil Consumption) = `r round(x2$coefficients[1], digits =2)` + `r round(x2$coefficients[2], digits = 2)`log(DefenseBudget) -`r -round(x2$coefficients[3], digits = 2)`log(power_index) +`r round(x2$coefficients[4], digits = 2)`log(NavyShips) - `r -round(x2$coefficients[5], digits = 2)`log(ActivePersonnel)
+
+Adjusted R^2^ = 0.8546
+
+#### Reduced Transformed Model Evaluation 
+Let us check the diagonistic plots:
+```{r, fig.align = "center", echo = FALSE}
+par(mfrow= c(2,2))
+plot(x2)
+```
+All our assumptions are satisfied. The Residuals vs Fitted plot illustrates a linear relationship, the normal Q-Q plot shows a normality of errors, and the standardized residual plot shows standardized residuals. The only significant outliers are points 25 and 90 according to the leverage plot.
+\
+\
+Now let us check for multicollinearity:
+```{r}
+vif(x2)
+```
+The VIFs are still a little high, but they are significantly better than the VIFs of model one and two.
+
+#### Final Model
+Because all the assumptions of linearity, normality of errors, and constance variance are satisfied, and multicollinearity is significantly reduced, our reduced transformed model is our final model.
+
+log(Predicted Oil Consumption) = `r round(x2$coefficients[1], digits =2)` + `r round(x2$coefficients[2], digits = 2)`log(DefenseBudget) -`r -round(x2$coefficients[3], digits = 2)`log(power_index) +`r round(x2$coefficients[4], digits = 2)`log(NavyShips) - `r -round(x2$coefficients[5], digits = 2)`log(ActivePersonnel)
+
+- If Power_index, Navyships, and Active Personnel are held constant, than a 1% increase in Defense Budget results in a 0.47% increase in Oil Consumption
+- If Defense Budget, Navyships, and Active Personnel are held constant, then a 1% increase in Power_index will result in a 0.58% decrease in Oil Consumption
+- If Defense Budget, Power_index, and Active Personnel are held constant, then a 1% increase in Navy Ships will result in a 0.15% increase in Oil Consumption
+- If Defense Budget, Power_index, and Navy Ships are held constant, then a 1% increase in Active Personnel will result in a 0.11% decrease in Oil Consumption.
+
+#### Discussion 
+According to an article published in ThePrint, the US military is the largest consumer of fossil fuels in the world (Weir et al., 2021). Another study conducted in 2019 found that the US military's use would "make it the 47th largest emitter of greenhouse gases in the world" (Belcher et.al, 2019). However, we cannot confirm exactly how much each nation's military consumes, as in 1997, the US won a "military exemption" from reporting under the Kyoto climate accord. This military exemption is granted under the grounds of "national security", according to the Military Emissions Gap. For this reason, I think that our final reduced transformed model can give many insights into how a nation's military impacts a nation's oil use.
+\
+\
+I believe that the final reduced transformed model makes a lot of sense in the real world. The reason why I believe this is because most of the correlation coefficients align with intuition. For instance, one would expect that if a military were to increase their budget, then more money would go into building, transporting, and inventing projects which require a great deal of energy to construct. Hence, oil consumption would increase. The same reasoning can be said for the power_index and navy ships variables as well.
+\
+\
+Something which does not make sense, however, is the active personnel correlation coefficient being negative. I would expect in the real world that the more active military members, the more oil would be needed in order to transport, house, and accommodate for them. Additionally, I am suprised that the aircrafts variable was not found to be significant. I would expect aircrafts to be the most important factor of them all, as commercial airplanes and jets contribute around 3 percent of the nations total greenhouse gas production (Overton, 2019).
+
+#### Limitations and Future Improvements
+Our model had to overcome many limitations. The main one was the one stated above: that militaries do not have to report their use. For this reason, the oil consumption from our data set was the total oil consumption of a nation, not the oil consumption from the military alone. For this reason, there could be many outliers, as countries may use tons of oil while having an inadequate military. However, for the most part, there is an association between oil use and military strength. 
+\
+\
+Areas where the final model could improve is by analyzing a categorical variable. For instance, in the original data frame, there is a column called Aircraft Carriers. Aircraft carriers are a true flagship of the most powerful militaries in the world. In fact, only seven countries have just one, and the US is the only nation with more than 2. So the jets you see taking off from Top Gun can only be done from seven countries. If I wanted to have a categorical variable, I could make having an aircraft carrier a categorical variable and seeing if this significantly affects the oil consumption of a nation. 
+
+
+#### Sources
+\
+Belcher, O, Bigger, P, Neimark, B, Kennelly, C. Hidden carbon costs of the “everywhere war”: Logistics, geopolitical ecology, and the carbon boot-print of the US military. Trans Inst Br Geogr. 2020; 45: 65– 80. https://doi.org/10.1111/tran.12319
+\
+\
+Environmental and Energy Study Institute (EESI). “Issue Brief: The Growth in Greenhouse Gas Emissions from Commercial Aviation (2019, Revised 2022).” EESI, https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
+\
+\
+Kanawattanachai, Prasert. “Military Power by Country 2022.” Kaggle, 20 Feb. 2022, https://www.kaggle.com/datasets/prasertk/military-power-by-country-2022. 
+\
+\
+Weir, Doug. “US Defense Largest Consumer of Fossil Fuels - How World's Militaries Hide Carbon Emissions.” ThePrint, 14 Nov. 2021, https://theprint.in/world/us-defense-largest-consumer-of-fossil-fuels-how-worlds-militaries-hide-carbon-emissions/765688/. 
+\
+\
+“2023 Military Strength Ranking.” Global Firepower - World Military Strength, https://www.globalfirepower.com/countries-listing.php. 
+
+
+
+
